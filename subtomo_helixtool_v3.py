@@ -8,6 +8,8 @@
 #		2022/04/12	add the function to align with reference
 #		2022/04/14	add the function to mask out the density out of filament.
 #		2022/06/13	fix the bug for non_helix when using dynamo tbl
+#		2022/10/29	add the option to directly project without rotating volume 90 degree
+
 try:
         from optparse import OptionParser
 except:
@@ -38,6 +40,7 @@ def main():
 	parser.add_option("--ref", dest="ref", type="string", help="The name of the refernece. The default is none.", default="")
 	parser.add_option("--binning", dest="binning", type="int", help="The binning level to align with reference. The default is 2.", default=2)
 	parser.add_option("--mask", dest="mask", type="string", help="The mask file to mask out the density out of filament. The default is none.", default="")
+	parser.add_option("--projXY", dest="projXY", action="store_true", help="Perform the projection along XY plane without rotating 90 degree of the volume. The default is False.", default=False)
 	(options, args) = parser.parse_args()
 
 	if len(args) < 1:
@@ -59,6 +62,7 @@ def main():
 	non_helix = options.non_helix
 	angpix = options.angpix
 	mask = options.mask
+	projXY = options.projXY
 
 	if not(dynamo):
 		optic_info, ptcl_info = fetch_optic(ptcltxt)
@@ -224,29 +228,34 @@ def main():
 					helical_tube_ID = ptcl[-1]
 					particle_helical_track_length = math.sqrt((posx_star - xstart_px)**2 + (posy_star - ystart_px)**2 + (posz_star - zstart_px)**2)
 					tilt_ptcl = psi_ptcl = 0.000000
+					posx_last = posy_last = posz_last = 0.000
 					if non_helix:
 						tilt_ptcl = ptcl[7]
 						psi_ptcl = ptcl[8]
 					else:
 						if num == 0:
-							tilt_ptcl = tilt_prior
-							psi_ptcl = psi_prior
+#Modified: 2022/10/29
+	#						tilt_ptcl = tilt_prior
+	#						psi_ptcl = psi_prior
+							posx_last = subtube_lst[num + 1][2]
+							posy_last = subtube_lst[num + 1][3]
+							posz_last = subtube_lst[num + 1][4]
 						else:
 							posx_last = subtube_lst[num-1][2]
 							posy_last = subtube_lst[num-1][3]
 							posz_last = subtube_lst[num-1][4]
-							diffx = posx_star - posx_last
-							diffy = posy_star - posy_last
-							diffz = posz_star - posz_last
+						diffx = posx_star - posx_last
+						diffy = posy_star - posy_last
+						diffz = posz_star - posz_last
 #							print diffz, particle_helical_track_length, ptcl
 #Modified: 2022/04/08
 #Fix the bug for tilt_ptcl: it should be length between two neighboring points, not particle_helical_trach_length!
-							tilt_ptcl = math.acos(diffz/math.sqrt((diffx)**2 + (diffy)**2 + (diffz)**2)) / math.pi * 180
-							psi_cal = math.atan2(diffy, diffx) / math.pi * 180
-							if psi_cal > 0:
-								psi_ptcl = 180 - psi_cal
-							else:
-								psi_ptcl = -1 * (180 + psi_cal)
+						tilt_ptcl = math.acos(diffz/math.sqrt((diffx)**2 + (diffy)**2 + (diffz)**2)) / math.pi * 180
+						psi_cal = math.atan2(diffy, diffx) / math.pi * 180
+						if psi_cal > 0:
+							psi_ptcl = 180 - psi_cal
+						else:
+							psi_ptcl = -1 * (180 + psi_cal)
 
 					psi_prior_flip_ratio = 0.500000
 					ptcl_name = ptcl[0]
@@ -332,11 +341,12 @@ def main():
 			d = d2 * m		
 	
 #Modified 2022/04/04 Relion psi 0 is equal to 90 in EMAN?
-		rot_t = Transform({"type":"eman", "az":0, "alt":90, "phi":0})
-		d.transform(rot_t)
-		rot_psi = Transform({"type":"eman", "az":0, "alt":0, "phi":90})
-		d.transform(rot_psi)
-		d.process_inplace("normalize.edgemean")
+		if not projXY:
+			rot_t = Transform({"type":"eman", "az":0, "alt":90, "phi":0})
+			d.transform(rot_t)
+			rot_psi = Transform({"type":"eman", "az":0, "alt":0, "phi":90})
+			d.transform(rot_psi)
+			d.process_inplace("normalize.edgemean")
 #The projection orientation will be only alt=90 compared to the reference.
 
 		transformed_tmp = "%s_tmp_transformed.mrcs"%(ptcl_prefix)
@@ -380,7 +390,10 @@ def main():
 				out_txt.write(i)
 		else:
 			out_txt.write("\n# version 30001\n\ndata_optics\n\nloop_\n_rlnOpticsGroup #1\n_rlnOpticsGroupName #2\n_rlnSphericalAberration #3\n_rlnVoltage #4\n_rlnMicrographOriginalPixelSize #5\n_rlnAmplitudeContrast #6\n_rlnImageDimensionality #7\n_rlnImagePixelSize #8\n_rlnImageSize #9\n")
-			out_txt.write("1\topticsGroup1\t2.700000\t300.000000\t4.510000\t0.100000\t2\t9.020000\t48\n")
+			out_txt.write("1\topticsGroup1\t2.700000\t300.000000\t%.6f\t0.100000\t2\t%.6f\t48\n"%(angpix, angpix))
+	else:
+		out_txt.write("\n# version 30001\n\ndata_optics\n\nloop_\n_rlnOpticsGroup #1\n_rlnOpticsGroupName #2\n_rlnSphericalAberration #3\n_rlnVoltage #4\n_rlnMicrographOriginalPixelSize #5\n_rlnAmplitudeContrast #6\n_rlnImageDimensionality #7\n_rlnImagePixelSize #8\n_rlnImageSize #9\n")
+		out_txt.write("1\topticsGroup1\t2.700000\t300.000000\t%.6f\t0.100000\t2\t%.6f\t48\n"%(angpix, angpix))
 	out_txt.write("\n# version 30001\n\ndata_particles\n\nloop_\n_rlnImageName #1\n_rlnAngleRot #2\n_rlnAngleTiltPrior #3\n_rlnAnglePsiPrior #4\n_rlnHelicalTubeID #5\n_rlnHelicalTrackLength #6\n_rlnAnglePsiFlipRatio #7\n_rlnCoordinateX #8\n_rlnCoordinateY #9\n_rlnRandomSubset #10\n_rlnMicrographName #11\n_rlnOriginXAngst #12\n_rlnOriginYAngst #13\n_rlnOriginZAngst #14\n_rlnOpticsGroup #15\n")
 	for i in ptcl_info_lst:
 		ptcl_update = ""
@@ -395,7 +408,7 @@ def main():
 				ptcl_update += "%s\t"%(item)
 		ptcl_update += "\n"
 		out_txt.write(ptcl_update)
-		
+	print "DONE! Please modify the corresponding optic information in the star file."
 
 def fetch_optic(star_info):
         optic_info = []
