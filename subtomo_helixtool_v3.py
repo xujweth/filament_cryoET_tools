@@ -7,7 +7,7 @@
 #		2022/04/04	fix the bug about the psi definition difference between EMAN and Relion
 #		2022/04/12	add the function to align with reference
 #		2022/04/14	add the function to mask out the density out of filament.
-#		2022/06/103	fix the bug for non_helix when using dynamo tbl
+#		2022/06/13	fix the bug for non_helix when using dynamo tbl
 try:
         from optparse import OptionParser
 except:
